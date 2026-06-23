@@ -1,16 +1,19 @@
 import { MongoClient } from 'mongodb';
 
-// MongoDB Bağlantı Hazırlığı (Vercel Serverless için optimize edildi)
 let cachedClient = null;
+
 async function connectToDatabase() {
     if (cachedClient) return cachedClient;
-    const client = await MongoClient.connect(process.env.MONGODB_URI);
+
+    const client = await MongoClient.connect(process.env.MONGODB_URI, {
+        maxPoolSize: 10
+    });
+
     cachedClient = client;
     return client;
 }
 
 export default async function handler(req, res) {
-    // CORS Ayarları (Roblox ve Tarayıcı erişimi için)
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Hub-Secret');
@@ -21,36 +24,40 @@ export default async function handler(req, res) {
 
     try {
         const client = await connectToDatabase();
-        const db = client.db('hubtrack'); // Veritabanı adı
+        const db = client.db('hubtrack');
 
-        // 1. DURUM: ROBLOX'TAN GELECEK ANALİTİK VERİLERİ (POST)
-        if (req.method === 'POST') {
+        // Roblox analytics
+        if (req.method === 'POST' && !req.body.action) {
             const hubAuthHeader = req.headers['x-hub-secret'];
+
             if (!MY_SECRET || hubAuthHeader !== MY_SECRET) {
-                return res.status(401).json({ error: 'Yetkisiz Erişim' });
+                return res.status(401).json({ error: 'Yetkisiz' });
             }
 
             const data = req.body;
-            data.createdAt = new Date(); // Zaman damgası ekle
+            data.createdAt = new Date();
 
-            // Logları 'analytics' tablosuna kaydet
             await db.collection('analytics').insertOne(data);
             return res.status(200).json({ status: 'success' });
         }
 
-        // 2. DURUM: DASHBOARD İŞLEMLERİ (GET)
-        if (req.method === 'GET') {
-            const { action, name, code } = req.query;
+        // Create script
+        if (req.method === 'POST' && req.body.action === 'create') {
+            const { name, code } = req.body;
 
-            // Script Oluşturma Aşaması
-            if (action === 'create' && code) {
-                const trackingKey = 'hub_' + Math.random().toString(36).substring(2, 11);
-                
-                // Orijinal kodu ileride lazım olursa diye 'scripts' tablosuna kaydet
-                await db.collection('scripts').insertOne({ name, trackingKey, originalCode: code, createdAt: new Date() });
+            const trackingKey =
+                'hub_' + Math.random().toString(36).substring(2, 11);
 
-                const appUrl = `https://${req.headers.host}`;
-                const LUA_TEMPLATE = `-- HubTrack Analytics [Private Hub]
+            await db.collection('scripts').insertOne({
+                name,
+                trackingKey,
+                originalCode: code,
+                createdAt: new Date()
+            });
+
+            const appUrl = `https://${req.headers.host}`;
+
+            const LUA_TEMPLATE = `-- HubTrack Analytics
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
@@ -68,7 +75,7 @@ local function gatherAndSend(success, err)
             success = success,
             error = err and tostring(err) or nil
         })
-        
+
         pcall(function()
             HttpService:PostAsync("${appUrl}/api/track", payload, Enum.HttpContentType.ApplicationJson, false, {
                 ["X-Hub-Secret"] = "${MY_SECRET || ''}"
@@ -86,25 +93,32 @@ end
 runWrapped(function()
 `;
 
-                let modifiedLua = LUA_TEMPLATE + '\n' + code + '\n\nend)';
-                return res.status(200).json({ modifiedLua, trackingKey });
-            }
+            const modifiedLua = LUA_TEMPLATE + '\n' + code + '\n\nend)';
 
-            // Verileri Dashboard için listeleme aşaması
+            return res.status(200).json({
+                modifiedLua,
+                trackingKey
+            });
+        }
+
+        if (req.method === 'GET') {
+            const { action } = req.query;
+
             if (action === 'data') {
-                // Son 50 logu tarihe göre ters sırala ve getir
-                const logs = await db.collection('analytics')
-                                     .find({})
-                                     .sort({ createdAt: -1 })
-                                     .limit(50)
-                                     .toArray();
+                const logs = await db
+                    .collection('analytics')
+                    .find({})
+                    .sort({ createdAt: -1 })
+                    .limit(50)
+                    .toArray();
+
                 return res.status(200).json(logs);
             }
-
-            return res.status(400).json({ error: 'Geçersiz işlem' });
         }
+
+        return res.status(400).json({ error: 'Geçersiz işlem' });
     } catch (error) {
         console.error(error);
-        return res.status(500).json({ error: 'Veritabanı hatası oluştu.' });
+        return res.status(500).json({ error: error.message });
     }
 }
