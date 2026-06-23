@@ -1,13 +1,58 @@
-// GitHub üzerinde api/track.js olarak kaydedin
-const { kv } = require('@vercel/kv'); // Ücretsiz ve kurulumu çok kolay Vercel veri deposu
+import { MongoClient } from 'mongodb';
 
-const LUA_TEMPLATE = `-- HubTrack Analytics [Private Hub]
+// MongoDB Bağlantı Hazırlığı (Vercel Serverless için optimize edildi)
+let cachedClient = null;
+async function connectToDatabase() {
+    if (cachedClient) return cachedClient;
+    const client = await MongoClient.connect(process.env.MONGODB_URI);
+    cachedClient = client;
+    return client;
+}
+
+export default async function handler(req, res) {
+    // CORS Ayarları (Roblox ve Tarayıcı erişimi için)
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Hub-Secret');
+
+    if (req.method === 'OPTIONS') return res.status(200).end();
+
+    const MY_SECRET = process.env.MY_HUB_SECRET_KEY;
+
+    try {
+        const client = await connectToDatabase();
+        const db = client.db('hubtrack'); // Veritabanı adı
+
+        // 1. DURUM: ROBLOX'TAN GELECEK ANALİTİK VERİLERİ (POST)
+        if (req.method === 'POST') {
+            const hubAuthHeader = req.headers['x-hub-secret'];
+            if (!MY_SECRET || hubAuthHeader !== MY_SECRET) {
+                return res.status(401).json({ error: 'Yetkisiz Erişim' });
+            }
+
+            const data = req.body;
+            data.createdAt = new Date(); // Zaman damgası ekle
+
+            // Logları 'analytics' tablosuna kaydet
+            await db.collection('analytics').insertOne(data);
+            return res.status(200).json({ status: 'success' });
+        }
+
+        // 2. DURUM: DASHBOARD İŞLEMLERİ (GET)
+        if (req.method === 'GET') {
+            const { action, name, code } = req.query;
+
+            // Script Oluşturma Aşaması
+            if (action === 'create' && code) {
+                const trackingKey = 'hub_' + Math.random().toString(36).substring(2, 11);
+                
+                // Orijinal kodu ileride lazım olursa diye 'scripts' tablosuna kaydet
+                await db.collection('scripts').insertOne({ name, trackingKey, originalCode: code, createdAt: new Date() });
+
+                const appUrl = `https://${req.headers.host}`;
+                const LUA_TEMPLATE = `-- HubTrack Analytics [Private Hub]
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
-
-local TRACKING_URL = "https://" .. game:GetService("HttpService"):GetAsync("https://api.ipify.org") -- Dinamik URL tespiti veya direkt kendi vercel linkiniz
-local TRACKING_KEY = "TRACKING_KEY_PLACEHOLDER"
-local HUB_SECRET   = "HUB_SECRET_PLACEHOLDER"
 
 local function gatherAndSend(success, err)
     task.spawn(function()
@@ -15,7 +60,7 @@ local function gatherAndSend(success, err)
         while not p do task.wait() p = Players.LocalPlayer end
         
         local payload = HttpService:JSONEncode({
-            trackingKey = TRACKING_KEY,
+            trackingKey = "${trackingKey}",
             executor = identifyexecutor and identifyexecutor() or "Unknown",
             userId = p.UserId,
             username = p.Name,
@@ -25,8 +70,8 @@ local function gatherAndSend(success, err)
         })
         
         pcall(function()
-            HttpService:PostAsync("APP_URL_PLACEHOLDER/api/track", payload, Enum.HttpContentType.ApplicationJson, false, {
-                ["X-Hub-Secret"] = HUB_SECRET
+            HttpService:PostAsync("${appUrl}/api/track", payload, Enum.HttpContentType.ApplicationJson, false, {
+                ["X-Hub-Secret"] = "${MY_SECRET || ''}"
             })
         end)
     end)
@@ -41,64 +86,25 @@ end
 runWrapped(function()
 `;
 
-export default async function handler(req, res) {
-    // CORS Ayarları (Her yerden erişim için)
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Hub-Secret');
-
-    if (req.method === 'OPTIONS') return res.status(200).end();
-
-    const MY_SECRET = process.env.MY_HUB_SECRET_KEY;
-
-    // 1. DURUM: ROBLOX'TAN VERİ GELİYORSA (POST)
-    if (req.method === 'POST') {
-        const hubAuthHeader = req.headers['x-hub-secret'];
-        if (!MY_SECRET || hubAuthHeader !== MY_SECRET) {
-            return res.status(401).json({ error: 'Yetkisiz Erişim' });
-        }
-
-        const data = req.body;
-        // Gelen veriyi Vercel KV veri deposuna saniyeler içinde kaydet
-        const recordId = `log:${data.trackingKey}:${Date.now()}`;
-        await kv.set(recordId, data);
-
-        return res.status(200).json({ status: 'success' });
-    }
-
-    // 2. DURUM: TARAYICIDAN SCRIPT OLUŞTURMA İSTEĞİ GELİYORSA (GET)
-    if (req.method === 'GET') {
-        const { action, name, code, key } = req.query;
-
-        // Script Oluşturma Aşaması
-        if (action === 'create' && code) {
-            const trackingKey = 'hub_' + Math.random().toString(36).substring(2, 11);
-            
-            // Orijinal scripti KV'ye kaydet
-            await kv.set(`script:${trackingKey}`, { name, originalCode: code });
-
-            const appUrl = `https://${req.headers.host}`;
-            let modifiedLua = LUA_TEMPLATE
-                .replace('TRACKING_KEY_PLACEHOLDER', trackingKey)
-                .replace('HUB_SECRET_PLACEHOLDER', MY_SECRET || "")
-                .replace('APP_URL_PLACEHOLDER', appUrl)
-                + '\n' + code + '\n\nend)';
-
-            return res.status(200).json({ modifiedLua, trackingKey });
-        }
-
-        // Verileri Dashboard için listeleme aşaması
-        if (action === 'data') {
-            const keys = await kv.keys('log:*');
-            const logs = [];
-            for (const k of keys) {
-                const log = await kv.get(k);
-                logs.push(log);
+                let modifiedLua = LUA_TEMPLATE + '\n' + code + '\n\nend)';
+                return res.status(200).json({ modifiedLua, trackingKey });
             }
-            return res.status(200).json(logs);
-        }
 
-        return res.status(400).json({ error: 'Geçersiz işlem' });
+            // Verileri Dashboard için listeleme aşaması
+            if (action === 'data') {
+                // Son 50 logu tarihe göre ters sırala ve getir
+                const logs = await db.collection('analytics')
+                                     .find({})
+                                     .sort({ createdAt: -1 })
+                                     .limit(50)
+                                     .toArray();
+                return res.status(200).json(logs);
+            }
+
+            return res.status(400).json({ error: 'Geçersiz işlem' });
+        }
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ error: 'Veritabanı hatası oluştu.' });
     }
 }
-  
