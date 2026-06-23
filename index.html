@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HubTrack Panel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-white p-4 font-sans">
+    <div class="max-w-4xl mx-auto space-y-6">
+        <h1 class="text-2xl font-bold border-b border-slate-700 pb-2">HubTrack Mobil Panel</h1>
+        
+        <div class="bg-slate-800 p-4 rounded-lg space-y-3">
+            <h2 class="text-lg font-semibold">Script Enjekte Et</h2>
+            <input id="scriptName" type="text" placeholder="Script Adı" class="w-full bg-slate-900 p-2 rounded border border-slate-700">
+            <textarea id="rawCode" rows="6" placeholder="Roblox Lua Kodun" class="w-full bg-slate-900 p-2 rounded border border-slate-700 font-mono text-xs"></textarea>
+            <button onclick="generateScript()" class="w-full bg-blue-600 p-2 rounded font-bold">Enjekte Et ve Kod Al</button>
+        </div>
+
+        <div class="bg-slate-800 p-4 rounded-lg space-y-2">
+            <h2 class="text-lg font-semibold">Kopyalanacak Sonuç</h2>
+            <textarea id="outputCode" rows="6" readonly class="w-full bg-slate-950 p-2 rounded font-mono text-xs text-cyan-400"></textarea>
+        </div>
+
+        <div class="bg-slate-800 p-4 rounded-lg space-y-2">
+            <div class="flex justify-between items-center">
+                <h2 class="text-lg font-semibold">Gelen Veriler (Loglar)</h2>
+                <button onclick="loadLogs()" class="bg-green-600 px-3 py-1 rounded text-xs">Yenile</button>
+            </div>
+            <div id="logsContainer" class="space-y-2 font-mono text-xs max-h-60 overflow-y-auto">
+                <p class="text-slate-500">Henüz veri yok veya Yenile butonuna basılmadı.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function generateScript() {
+            const name = encodeURIComponent(document.getElementById('scriptName').value);
+            const code = encodeURIComponent(document.getElementById('rawCode').value);
+            
+            const res = await fetch(`/api/track?action=create&name=${name}&code=${code}`);
+            const data = await res.json();
+            if(data.modifiedLua) {
+                document.getElementById('outputCode').value = data.modifiedLua;
+            } else {
+                alert("Hata oluştu!");
+            }
+        }
+
+        async function loadLogs() {
+            const res = await fetch('/api/track?action=data');
+            const data = await res.json();
+            const container = document.getElementById('logsContainer');
+            container.innerHTML = '';
+            
+            if(data.length === 0) {
+                container.innerHTML = '<p class="text-slate-500">Log bulunamadı.</p>';
+                return;
+            }
+
+            data.forEach(log => {
+                const div = document.createElement('div');
+                div.className = 'bg-slate-900 p-2 rounded border border-slate-700';
+                div.innerHTML = `
+                    <span class="text-emerald-400">[User:${log.userId}]</span> 
+                    <span class="text-blue-400">${log.username}</span> 
+                    - Executor: <span class="text-yellow-400">${log.executor}</span> 
+                    - Place: ${log.placeId} 
+                    - Durum: ${log.success ? '✅ Başarılı' : '❌ Hata: ' + log.error}
+                `;
+                container.appendChild(div);
+            });
+        }
+    </script>
+</body>
+  </html>
+
