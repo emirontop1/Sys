@@ -2,9 +2,10 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HubTrack Pro</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 body{
     background:#0b1120;
@@ -12,113 +13,122 @@ body{
 }
 .card{
     background:#111827;
-    border:1px solid rgba(255,255,255,0.08);
+    border:1px solid rgba(255,255,255,.08);
 }
-textarea::-webkit-scrollbar{
-    width:8px;
-}
-textarea::-webkit-scrollbar-thumb{
-    background:#334155;
-    border-radius:10px;
-}
+textarea{resize:none;}
 </style>
 </head>
-<body class="min-h-screen p-5">
+<body class="p-5 min-h-screen">
 
 <div class="max-w-7xl mx-auto">
 
-    <!-- Header -->
-    <div class="mb-8 flex justify-between items-center">
+    <div class="flex justify-between items-center mb-8">
         <div>
             <h1 class="text-4xl font-bold">HubTrack Pro</h1>
-            <p class="text-gray-400">Advanced Roblox Hub Analytics</p>
+            <p class="text-gray-400">Advanced Roblox Analytics</p>
         </div>
-        <button onclick="loadLogs()" class="bg-green-600 px-5 py-3 rounded-xl font-bold">
-            Refresh Logs
+        <button onclick="loadLogs()" class="bg-green-600 px-4 py-3 rounded-xl">
+            Refresh
         </button>
     </div>
 
     <!-- Stats -->
     <div class="grid md:grid-cols-4 gap-4 mb-8">
-        <div class="card rounded-2xl p-5">
-            <p class="text-gray-400">Total Executes</p>
-            <h2 id="totalExecutes" class="text-3xl font-bold">0</h2>
+        <div class="card rounded-xl p-5">
+            <p>Total Executes</p>
+            <h2 id="statExecutes" class="text-3xl font-bold">0</h2>
         </div>
-        <div class="card rounded-2xl p-5">
-            <p class="text-gray-400">Unique Users</p>
-            <h2 id="uniqueUsers" class="text-3xl font-bold">0</h2>
+        <div class="card rounded-xl p-5">
+            <p>Unique Users</p>
+            <h2 id="statUsers" class="text-3xl font-bold">0</h2>
         </div>
-        <div class="card rounded-2xl p-5">
-            <p class="text-gray-400">Online Today</p>
-            <h2 id="onlineToday" class="text-3xl font-bold">0</h2>
+        <div class="card rounded-xl p-5">
+            <p>Executors</p>
+            <h2 id="statExecutors" class="text-3xl font-bold">0</h2>
         </div>
-        <div class="card rounded-2xl p-5">
-            <p class="text-gray-400">Error Rate</p>
-            <h2 id="errorRate" class="text-3xl font-bold">0%</h2>
+        <div class="card rounded-xl p-5">
+            <p>Error Rate</p>
+            <h2 id="statErrors" class="text-3xl font-bold">0%</h2>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="grid md:grid-cols-2 gap-6 mb-8">
+        <div class="card rounded-xl p-5">
+            <canvas id="executorChart"></canvas>
+        </div>
+        <div class="card rounded-xl p-5">
+            <canvas id="countryChart"></canvas>
         </div>
     </div>
 
     <!-- Script Generator -->
     <div class="grid lg:grid-cols-2 gap-6 mb-8">
-        <div class="card rounded-2xl p-5">
-            <h2 class="text-2xl font-bold mb-4">Script Input</h2>
+        <div class="card rounded-xl p-5">
+            <h2 class="text-2xl font-bold mb-4">Lua Script Input</h2>
 
-            <input id="scriptName" placeholder="Script Name"
-                class="w-full bg-slate-900 p-3 rounded-xl mb-4">
+            <input id="scriptName"
+                   class="w-full p-3 bg-slate-900 rounded-xl mb-4"
+                   placeholder="Script Name">
 
             <textarea id="rawCode"
-                rows="18"
-                placeholder="Lua scriptini buraya yapıştır..."
-                class="w-full bg-black p-4 rounded-xl font-mono"></textarea>
+                      rows="18"
+                      class="w-full p-4 bg-black rounded-xl font-mono"
+                      placeholder="Lua kodunu gir..."></textarea>
 
-            <button onclick="generateScript()"
-                class="w-full mt-4 bg-blue-600 py-4 rounded-xl font-bold">
+            <button onclick="generateUsage()"
+                    class="w-full mt-4 bg-blue-600 py-4 rounded-xl font-bold">
                 Generate Usage Code
             </button>
         </div>
 
-        <div class="card rounded-2xl p-5">
+        <div class="card rounded-xl p-5">
             <div class="flex justify-between mb-4">
                 <h2 class="text-2xl font-bold">Usage Code</h2>
-                <button onclick="copyCode()"
-                    class="bg-cyan-600 px-4 py-2 rounded-xl">
+                <button onclick="copyCode()" class="bg-cyan-600 px-4 rounded-xl">
                     Copy
                 </button>
             </div>
 
             <textarea id="usageCode"
-                rows="24"
-                readonly
-                class="w-full bg-black p-4 rounded-xl text-cyan-400 font-mono"></textarea>
+                      rows="22"
+                      readonly
+                      class="w-full p-4 bg-black rounded-xl text-cyan-400 font-mono"></textarea>
         </div>
     </div>
 
     <!-- Search -->
-    <div class="card rounded-2xl p-5 mb-8">
+    <div class="card rounded-xl p-5 mb-8">
         <input id="searchBox"
-            placeholder="Search username / userId / executor..."
-            class="w-full bg-black p-4 rounded-xl">
+               class="w-full bg-black p-4 rounded-xl"
+               placeholder="Search username / userId / executor">
     </div>
 
     <!-- Logs -->
-    <div class="card rounded-2xl p-5">
+    <div class="card rounded-xl p-5">
         <h2 class="text-2xl font-bold mb-4">Live Logs</h2>
-        <div id="logsContainer" class="space-y-3 max-h-[600px] overflow-auto"></div>
+        <div id="logsContainer" class="space-y-3 max-h-[500px] overflow-auto"></div>
     </div>
 
 </div>
 
 <script>
-async function generateScript(){
-    const name = document.getElementById("scriptName").value;
-    const code = document.getElementById("rawCode").value;
+let executorChart;
+let countryChart;
 
-    if(!code.trim()){
-        alert("Lua kodu boş.");
-        return;
+function randomColor(seed){
+    let hash=0;
+    for(let i=0;i<seed.length;i++){
+        hash=seed.charCodeAt(i)+((hash<<5)-hash);
     }
+    return `hsl(${Math.abs(hash)%360},70%,60%)`;
+}
 
-    const res = await fetch("/api/track",{
+async function generateUsage(){
+    const name=document.getElementById("scriptName").value;
+    const code=document.getElementById("rawCode").value;
+
+    const res=await fetch("/api/track",{
         method:"POST",
         headers:{
             "Content-Type":"application/json"
@@ -130,10 +140,10 @@ async function generateScript(){
         })
     });
 
-    const data = await res.json();
+    const data=await res.json();
 
     if(data.modifiedLua){
-        document.getElementById("usageCode").value = data.modifiedLua;
+        document.getElementById("usageCode").value=data.modifiedLua;
     }else{
         alert(JSON.stringify(data));
     }
@@ -146,36 +156,69 @@ function copyCode(){
 }
 
 async function loadLogs(){
-    const res = await fetch("/api/track?action=logs");
-    const logs = await res.json();
+    const res=await fetch("/api/track?action=logs");
+    const logs=await res.json();
 
-    const container = document.getElementById("logsContainer");
-    container.innerHTML = "";
+    const container=document.getElementById("logsContainer");
+    container.innerHTML="";
 
-    if(!logs.length){
-        container.innerHTML = "<p class='text-gray-500'>No logs yet.</p>";
-        return;
-    }
+    const executors={};
+    const countries={};
 
     logs.forEach(log=>{
-        const div = document.createElement("div");
-        div.className = "bg-slate-900 rounded-xl p-4";
+        executors[log.executor]=(executors[log.executor]||0)+1;
+        countries[log.country]=(countries[log.country]||0)+1;
 
-        div.innerHTML = `
-            <div class="font-bold text-lg">${log.username || "Unknown"}</div>
-            <div>User ID: ${log.userId || "?"}</div>
-            <div>Executor: ${log.executor || "Unknown"}</div>
-            <div>Place: ${log.placeId || "Unknown"}</div>
-            <div>Execute #: ${log.executeNumber || "?"}</div>
-            <div>Status: ${
-                log.success
-                    ? "<span class='text-green-400'>Success</span>"
-                    : "<span class='text-red-400'>Error</span>"
-            }</div>
+        container.innerHTML += `
+            <div class="bg-slate-900 rounded-xl p-4">
+                <div class="font-bold">${log.username}</div>
+                <div>User ID: ${log.userId}</div>
+                <div>Executor: ${log.executor}</div>
+                <div>Country: ${log.country || "Unknown"}</div>
+                <div>Execute #: ${log.executeNumber || "?"}</div>
+            </div>
         `;
-
-        container.appendChild(div);
     });
+
+    drawCharts(executors,countries);
+}
+
+function drawCharts(executors,countries){
+    const eLabels=Object.keys(executors);
+    const eData=Object.values(executors);
+
+    const cLabels=Object.keys(countries);
+    const cData=Object.values(countries);
+
+    if(executorChart) executorChart.destroy();
+    if(countryChart) countryChart.destroy();
+
+    executorChart=new Chart(
+        document.getElementById("executorChart"),
+        {
+            type:"pie",
+            data:{
+                labels:eLabels,
+                datasets:[{
+                    data:eData,
+                    backgroundColor:eLabels.map(x=>randomColor(x))
+                }]
+            }
+        }
+    );
+
+    countryChart=new Chart(
+        document.getElementById("countryChart"),
+        {
+            type:"bar",
+            data:{
+                labels:cLabels,
+                datasets:[{
+                    data:cData
+                }]
+            }
+        }
+    );
 }
 
 loadLogs();
