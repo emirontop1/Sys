@@ -154,6 +154,7 @@ local function postLog(success, err)
         error = err and tostring(err) or nil
     }
 
+    local body = HttpService:JSONEncode(payload)
     pcall(function()
         req({
             Url = ENDPOINT,
