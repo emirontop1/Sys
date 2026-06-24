@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -7,83 +7,59 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
 body{
-background: radial-gradient(circle at top,#1e3a8a,#020617);
-min-height:100vh;
+background:#0f172a;
+color:white;
 }
-.glass{
-background:rgba(255,255,255,.05);
-backdrop-filter:blur(16px);
-border:1px solid rgba(255,255,255,.1);
+.card{
+background:#1e293b;
+border-radius:16px;
+padding:20px;
 }
 </style>
 </head>
-<body class="text-white p-4">
+<body class="p-4">
 
-<div class="max-w-6xl mx-auto">
+<div class="max-w-5xl mx-auto space-y-6">
 
-<div class="flex items-center gap-4 mb-6">
-<img src="/logo.png" class="w-14 h-14 rounded-xl object-cover">
-<div>
-<h1 class="text-3xl font-bold">HubTrack</h1>
-<p class="text-gray-400">Analytics Dashboard</p>
-</div>
-</div>
+<h1 class="text-3xl font-bold">HubTrack Dashboard</h1>
 
-<div class="grid md:grid-cols-2 gap-6">
+<div class="card space-y-4">
+<input id="scriptName" class="w-full p-3 rounded bg-slate-900" placeholder="Script Name">
 
-<div class="glass rounded-2xl p-5">
-<h2 class="font-bold text-xl mb-4">Script Inject</h2>
+<textarea id="rawCode" rows="10" class="w-full p-3 rounded bg-slate-900 font-mono" placeholder="Lua code"></textarea>
 
-<input id="scriptName" placeholder="Script adı"
-class="w-full p-3 rounded-xl bg-black/30 mb-3 outline-none">
-
-<textarea id="rawCode" rows="10"
-placeholder="Lua kod..."
-class="w-full p-3 rounded-xl bg-black/30 outline-none font-mono"></textarea>
-
-<button onclick="generateScript()"
-class="w-full mt-4 bg-blue-600 hover:bg-blue-500 p-3 rounded-xl font-bold">
-Generate
+<button onclick="generateScript()" class="w-full bg-blue-600 p-3 rounded">
+Generate Script
 </button>
 </div>
 
-<div class="glass rounded-2xl p-5">
+<div class="card">
+<textarea id="outputCode" rows="16" readonly class="w-full p-3 rounded bg-black text-cyan-400 font-mono"></textarea>
+</div>
+
+<div class="card">
 <div class="flex justify-between mb-4">
-<h2 class="font-bold text-xl">Output</h2>
-<button onclick="copyCode()" class="bg-cyan-600 px-4 rounded-lg">Copy</button>
+<h2>Logs</h2>
+<button onclick="loadLogs()" class="bg-green-600 px-4 py-2 rounded">Refresh</button>
 </div>
 
-<textarea id="outputCode" rows="16" readonly
-class="w-full p-3 rounded-xl bg-black/50 font-mono text-cyan-400"></textarea>
-</div>
-
-</div>
-
-<div class="glass rounded-2xl p-5 mt-6">
-<div class="flex justify-between items-center mb-4">
-<h2 class="font-bold text-xl">Live Logs</h2>
-<button onclick="loadLogs()" class="bg-green-600 px-4 py-2 rounded-xl">
-Refresh
-</button>
-</div>
-
-<div id="logsContainer" class="space-y-3 max-h-96 overflow-auto"></div>
+<div id="logsContainer" class="space-y-3"></div>
 </div>
 
 </div>
 
 <script>
 async function generateScript(){
-    const name=document.getElementById('scriptName').value;
-    const code=document.getElementById('rawCode').value;
+    const name=document.getElementById("scriptName").value;
+    const code=document.getElementById("rawCode").value;
 
-    const res=await fetch('/api/track',{
-        method:'POST',
+    const res=await fetch("/api/track",{
+        method:"POST",
         headers:{
-            'Content-Type':'application/json'
+            "Content-Type":"application/json"
         },
         body:JSON.stringify({
-            action:'create',
+            action:"create",
             name,
             code
         })
@@ -92,40 +68,32 @@ async function generateScript(){
     const data=await res.json();
 
     if(data.modifiedLua){
-        document.getElementById('outputCode').value=data.modifiedLua;
-    }else{
-        alert(data.error || "Hata");
+        document.getElementById("outputCode").value=data.modifiedLua;
+    } else {
+        alert(JSON.stringify(data));
     }
 }
 
-function copyCode(){
-    navigator.clipboard.writeText(
-        document.getElementById('outputCode').value
-    );
-}
-
 async function loadLogs(){
-    const res=await fetch('/api/track?action=data');
-    const data=await res.json();
+    const res=await fetch("/api/track?action=data");
+    const logs=await res.json();
 
-    const container=document.getElementById('logsContainer');
-    container.innerHTML='';
+    const c=document.getElementById("logsContainer");
+    c.innerHTML="";
 
-    data.forEach(log=>{
-        container.innerHTML+=`
-        <div class="bg-black/30 rounded-xl p-3 border border-white/10">
-            <div><b>User:</b> ${log.username} (${log.userId})</div>
-            <div><b>Executor:</b> ${log.executor}</div>
-            <div><b>Place:</b> ${log.placeId}</div>
-            <div><b>Status:</b> ${
-                log.success
-                ? '<span class="text-green-400">Success</span>'
-                : '<span class="text-red-400">'+log.error+'</span>'
-            }</div>
+    logs.forEach(log=>{
+        c.innerHTML += `
+        <div class="bg-slate-900 rounded p-3">
+            <div>User: ${log.username}</div>
+            <div>ID: ${log.userId}</div>
+            <div>Executor: ${log.executor}</div>
+            <div>Place: ${log.placeId}</div>
+            <div>Status: ${log.success ? "SUCCESS" : log.error}</div>
         </div>
         `;
     });
 }
 </script>
+
 </body>
 </html>
