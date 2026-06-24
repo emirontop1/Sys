@@ -1,6 +1,10 @@
 {
   "name": "hubtrack-mongodb",
   "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "check": "node --check api/track.js"
+  },
   "dependencies": {
     "mongodb": "^6.5.0"
   }
