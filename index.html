@@ -1,133 +1,184 @@
 <!DOCTYPE html>
-<html>
+<html lang="tr">
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HubTrack Pro</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<style>
+body{
+    background:#0b1120;
+    color:white;
+}
+.card{
+    background:#111827;
+    border:1px solid rgba(255,255,255,0.08);
+}
+textarea::-webkit-scrollbar{
+    width:8px;
+}
+textarea::-webkit-scrollbar-thumb{
+    background:#334155;
+    border-radius:10px;
+}
+</style>
 </head>
-<body class="bg-[#0b1120] text-white">
+<body class="min-h-screen p-5">
 
-<div class="flex h-screen">
+<div class="max-w-7xl mx-auto">
 
-<aside class="w-72 bg-[#111827] p-5">
-    <h1 class="text-3xl font-bold">HubTrack</h1>
-
-    <div class="mt-8 space-y-3">
-        <button class="w-full text-left p-3 rounded bg-slate-800">Dashboard</button>
-        <button class="w-full text-left p-3 rounded bg-slate-800">Logs</button>
-        <button class="w-full text-left p-3 rounded bg-slate-800">Search</button>
-    </div>
-</aside>
-
-<main class="flex-1 p-8">
-
-<div class="grid grid-cols-4 gap-4">
-    <div class="bg-slate-900 rounded-xl p-5">
-        <p>Total Executes</p>
-        <h2 id="executes" class="text-3xl font-bold">0</h2>
-    </div>
-
-    <div class="bg-slate-900 rounded-xl p-5">
-        <p>Unique Users</p>
-        <h2 id="users" class="text-3xl font-bold">0</h2>
-    </div>
-</div>
-    <div class="mt-8 bg-slate-900 rounded-xl p-5">
-    <div class="flex justify-between items-center mb-3">
-        <h2 class="text-xl font-bold">Usage Code</h2>
-        <button onclick="copyUsage()" class="bg-blue-600 px-4 py-2 rounded-lg">
-            Copy
+    <!-- Header -->
+    <div class="mb-8 flex justify-between items-center">
+        <div>
+            <h1 class="text-4xl font-bold">HubTrack Pro</h1>
+            <p class="text-gray-400">Advanced Roblox Hub Analytics</p>
+        </div>
+        <button onclick="loadLogs()" class="bg-green-600 px-5 py-3 rounded-xl font-bold">
+            Refresh Logs
         </button>
     </div>
 
-    <textarea
-        id="usageCode"
-        readonly
-        rows="12"
-        class="w-full bg-black rounded-lg p-4 font-mono text-cyan-400"
-    ></textarea>
+    <!-- Stats -->
+    <div class="grid md:grid-cols-4 gap-4 mb-8">
+        <div class="card rounded-2xl p-5">
+            <p class="text-gray-400">Total Executes</p>
+            <h2 id="totalExecutes" class="text-3xl font-bold">0</h2>
+        </div>
+        <div class="card rounded-2xl p-5">
+            <p class="text-gray-400">Unique Users</p>
+            <h2 id="uniqueUsers" class="text-3xl font-bold">0</h2>
+        </div>
+        <div class="card rounded-2xl p-5">
+            <p class="text-gray-400">Online Today</p>
+            <h2 id="onlineToday" class="text-3xl font-bold">0</h2>
+        </div>
+        <div class="card rounded-2xl p-5">
+            <p class="text-gray-400">Error Rate</p>
+            <h2 id="errorRate" class="text-3xl font-bold">0%</h2>
+        </div>
     </div>
 
-<div class="mt-8">
-<input id="search" placeholder="Search username..."
-class="w-full bg-slate-900 p-4 rounded-xl">
-</div>
+    <!-- Script Generator -->
+    <div class="grid lg:grid-cols-2 gap-6 mb-8">
+        <div class="card rounded-2xl p-5">
+            <h2 class="text-2xl font-bold mb-4">Script Input</h2>
 
-<div id="logs" class="mt-8 space-y-3"></div>
+            <input id="scriptName" placeholder="Script Name"
+                class="w-full bg-slate-900 p-3 rounded-xl mb-4">
 
-</main>
+            <textarea id="rawCode"
+                rows="18"
+                placeholder="Lua scriptini buraya yapıştır..."
+                class="w-full bg-black p-4 rounded-xl font-mono"></textarea>
+
+            <button onclick="generateScript()"
+                class="w-full mt-4 bg-blue-600 py-4 rounded-xl font-bold">
+                Generate Usage Code
+            </button>
+        </div>
+
+        <div class="card rounded-2xl p-5">
+            <div class="flex justify-between mb-4">
+                <h2 class="text-2xl font-bold">Usage Code</h2>
+                <button onclick="copyCode()"
+                    class="bg-cyan-600 px-4 py-2 rounded-xl">
+                    Copy
+                </button>
+            </div>
+
+            <textarea id="usageCode"
+                rows="24"
+                readonly
+                class="w-full bg-black p-4 rounded-xl text-cyan-400 font-mono"></textarea>
+        </div>
+    </div>
+
+    <!-- Search -->
+    <div class="card rounded-2xl p-5 mb-8">
+        <input id="searchBox"
+            placeholder="Search username / userId / executor..."
+            class="w-full bg-black p-4 rounded-xl">
+    </div>
+
+    <!-- Logs -->
+    <div class="card rounded-2xl p-5">
+        <h2 class="text-2xl font-bold mb-4">Live Logs</h2>
+        <div id="logsContainer" class="space-y-3 max-h-[600px] overflow-auto"></div>
+    </div>
+
 </div>
 
 <script>
+async function generateScript(){
+    const name = document.getElementById("scriptName").value;
+    const code = document.getElementById("rawCode").value;
 
-    function generateUsageCode(rawCode){
-    const wrapped = `
-local req = request or http_request or syn.request
-local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
-local Stats = game:GetService("Stats")
+    if(!code.trim()){
+        alert("Lua kodu boş.");
+        return;
+    }
 
-local player = Players.LocalPlayer
+    const res = await fetch("/api/track",{
+        method:"POST",
+        headers:{
+            "Content-Type":"application/json"
+        },
+        body:JSON.stringify({
+            action:"create",
+            name,
+            code
+        })
+    });
 
-local payload = {
-    userId = player.UserId,
-    username = player.Name,
-    displayName = player.DisplayName,
-    accountAge = player.AccountAge,
-    executor = identifyexecutor and identifyexecutor() or "Unknown",
-    placeId = game.PlaceId,
-    jobId = game.JobId,
-    fps = math.floor(workspace:GetRealPhysicsFPS()),
-    device = game:GetService("UserInputService").TouchEnabled and "Mobile" or "PC",
-    success = true
+    const data = await res.json();
+
+    if(data.modifiedLua){
+        document.getElementById("usageCode").value = data.modifiedLua;
+    }else{
+        alert(JSON.stringify(data));
+    }
 }
 
-local body = HttpService:JSONEncode(payload)
-
-req({
-    Url = window.location.origin + "/api/track",
-    Method = "POST",
-    Headers = {
-        ["Content-Type"] = "application/json"
-    },
-    Body = body
-})
-
-${rawCode}
-`;
-    document.getElementById("usageCode").value = wrapped;
-}
-
-function copyUsage(){
+function copyCode(){
     navigator.clipboard.writeText(
         document.getElementById("usageCode").value
     );
 }
-async function loadStats(){
-    const res=await fetch('/api/track?action=stats')
-    const data=await res.json()
-    document.getElementById('executes').innerText=data.totalExecutes
-    document.getElementById('users').innerText=data.totalUsers
-}
 
 async function loadLogs(){
-    const res=await fetch('/api/track?action=logs')
-    const logs=await res.json()
-    const c=document.getElementById('logs')
-    c.innerHTML=''
+    const res = await fetch("/api/track?action=logs");
+    const logs = await res.json();
+
+    const container = document.getElementById("logsContainer");
+    container.innerHTML = "";
+
+    if(!logs.length){
+        container.innerHTML = "<p class='text-gray-500'>No logs yet.</p>";
+        return;
+    }
 
     logs.forEach(log=>{
-        c.innerHTML += `
-        <div class="bg-slate-900 rounded-xl p-4">
-            <div>${log.username}</div>
-            <div>${log.executor}</div>
-            <div>Execute #${log.executeNumber}</div>
-        </div>
-        `
-    })
+        const div = document.createElement("div");
+        div.className = "bg-slate-900 rounded-xl p-4";
+
+        div.innerHTML = `
+            <div class="font-bold text-lg">${log.username || "Unknown"}</div>
+            <div>User ID: ${log.userId || "?"}</div>
+            <div>Executor: ${log.executor || "Unknown"}</div>
+            <div>Place: ${log.placeId || "Unknown"}</div>
+            <div>Execute #: ${log.executeNumber || "?"}</div>
+            <div>Status: ${
+                log.success
+                    ? "<span class='text-green-400'>Success</span>"
+                    : "<span class='text-red-400'>Error</span>"
+            }</div>
+        `;
+
+        container.appendChild(div);
+    });
 }
 
-loadStats()
-loadLogs()
+loadLogs();
 </script>
-
 </body>
 </html>
