@@ -248,7 +248,6 @@ function renderLogs(){
                 <div>Executor: ${escapeHtml(executor)}</div>
                 <div>Country: ${escapeHtml(country)}</div>
                 <div>Device: ${escapeHtml(log.device || "Unknown")}</div>
-                <div>Event: ${escapeHtml(log.event || "finish")}</div>
                 <div>Status: ${log.success === false ? "Error" : "Success"}</div>
                 <div>Execute #: ${escapeHtml(log.executeNumber || "?")}</div>
                 ${log.error ? `<pre class="mt-2 whitespace-pre-wrap text-red-300">${escapeHtml(log.error)}</pre>` : ""}

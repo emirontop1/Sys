@@ -3,7 +3,6 @@ import { MongoClient } from "mongodb";
 const DB_NAME = process.env.MONGODB_DB || "hubtrack";
 const HUB_SECRET = process.env.HUB_SECRET || "1901Emir";
 const MAX_LOGS = 250;
-const REQUEST_TIMEOUT_MS = 8000;
 
 let cachedClient = null;
 let cachedDb = null;
@@ -35,7 +34,7 @@ async function getDB() {
     }
 
     if (!cachedClient) {
-        cachedClient = new MongoClient(process.env.MONGODB_URI, { serverSelectionTimeoutMS: REQUEST_TIMEOUT_MS });
+        cachedClient = new MongoClient(process.env.MONGODB_URI);
         await cachedClient.connect();
         cachedDb = cachedClient.db(DB_NAME);
         await ensureIndexes(cachedDb);
@@ -66,10 +65,6 @@ function cleanString(value, fallback = "Unknown") {
     return text || fallback;
 }
 
-function getSecret(req, body) {
-    return getHeader(req, "x-hub-secret") || body.secret || req.query?.secret || "";
-}
-
 function normalizeLog(body, req) {
     const forwardedFor = getHeader(req, "x-forwarded-for");
     const ip = forwardedFor.split(",")[0]?.trim() || getHeader(req, "x-real-ip") || null;
@@ -85,7 +80,6 @@ function normalizeLog(body, req) {
         placeId: cleanString(body.placeId),
         jobId: cleanString(body.jobId, ""),
         device: cleanString(body.device),
-        event: cleanString(body.event, "finish"),
         success: body.success !== false,
         error: body.error ? String(body.error).slice(0, 2000) : null,
         country: cleanString(country),
@@ -138,7 +132,7 @@ local function getExecutor()
     return "Unknown"
 end
 
-local function postLog(event, success, err)
+local function postLog(success, err)
     local req = getRequest()
     if not req then
         warn("HubTrack Pro: this executor does not expose an HTTP request function")
@@ -147,8 +141,6 @@ local function postLog(event, success, err)
 
     local player = Players.LocalPlayer
     local payload = {
-        secret = SECRET,
-        event = event,
         scriptName = SCRIPT_NAME,
         userId = player and player.UserId or 0,
         username = player and player.Name or "Unknown",
@@ -171,19 +163,17 @@ local function postLog(event, success, err)
                 ["Content-Type"] = "application/json",
                 ["X-Hub-Secret"] = SECRET
             },
-            Body = body
+            Body = HttpService:JSONEncode(payload)
         })
     end)
 end
-
-postLog("start", true, nil)
 
 local function runUserScript()
 ${code}
 end
 
 local ok, err = xpcall(runUserScript, debug.traceback)
-postLog("finish", ok, err)
+postLog(ok, err)
 if not ok then
     error(err)
 end`;
@@ -212,7 +202,7 @@ export default async function handler(req, res) {
         }
 
         if (req.method === "POST") {
-            if (getSecret(req, body) !== HUB_SECRET) {
+            if (getHeader(req, "x-hub-secret") !== HUB_SECRET) {
                 return res.status(401).json({ error: "Unauthorized" });
             }
 
@@ -220,7 +210,6 @@ export default async function handler(req, res) {
             const logsCollection = db.collection("logs");
             const usersCollection = db.collection("users");
             const log = normalizeLog(body, req);
-            const shouldCountExecute = log.event === "start";
             const userUpdate = await usersCollection.findOneAndUpdate(
                 { userId: log.userId },
                 {
@@ -231,8 +220,8 @@ export default async function handler(req, res) {
                         executor: log.executor,
                         lastSeen: log.timestamp
                     },
-                    $setOnInsert: { firstSeen: log.timestamp, totalExecutes: 0 },
-                    ...(shouldCountExecute ? { $inc: { totalExecutes: 1 } } : {})
+                    $setOnInsert: { firstSeen: log.timestamp },
+                    $inc: { totalExecutes: 1 }
                 },
                 { upsert: true, returnDocument: "after" }
             );
@@ -244,20 +233,10 @@ export default async function handler(req, res) {
         }
 
         if (req.method === "GET") {
-            const action = req.query?.action || "logs";
-
-            if (action === "health") {
-                return res.status(200).json({
-                    ok: true,
-                    mongodbConfigured: Boolean(process.env.MONGODB_URI),
-                    publicBaseUrlConfigured: Boolean(process.env.PUBLIC_BASE_URL),
-                    dbName: DB_NAME
-                });
-            }
-
             const db = await getDB();
             const logsCollection = db.collection("logs");
             const usersCollection = db.collection("users");
+            const action = req.query?.action || "logs";
 
             if (action === "logs" || action === "data") {
                 const logs = await logsCollection.find({}).sort({ timestamp: -1 }).limit(MAX_LOGS).toArray();
@@ -267,9 +246,9 @@ export default async function handler(req, res) {
             if (action === "stats") {
                 const [totalUsers, totalExecutes, executorStats, errorStats] = await Promise.all([
                     usersCollection.countDocuments(),
-                    logsCollection.countDocuments({ event: "start" }),
+                    logsCollection.countDocuments(),
                     logsCollection.distinct("executor"),
-                    logsCollection.countDocuments({ event: "finish", success: false })
+                    logsCollection.countDocuments({ success: false })
                 ]);
 
                 return res.status(200).json({
