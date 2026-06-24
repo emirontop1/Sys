@@ -10,6 +10,7 @@ async function getDB() {
 }
 
 export default async function handler(req, res) {
+    // CORS
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Hub-Secret");
@@ -26,9 +27,9 @@ export default async function handler(req, res) {
                 ? JSON.parse(req.body)
                 : (req.body || {});
 
-        // ======================
-        // GENERATE USAGE CODE
-        // ======================
+        // =========================
+        // CREATE USAGE CODE
+        // =========================
         if (req.method === "POST" && body.action === "create") {
             const code = body.code || "";
 
@@ -38,12 +39,9 @@ local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
-while not player do
-    task.wait()
-    player = Players.LocalPlayer
-end
+while not player do task.wait() player = Players.LocalPlayer end
 
-local function sendLog(success, err)
+local function send(success, err)
     if not req then return end
 
     local payload = HttpService:JSONEncode({
@@ -72,12 +70,12 @@ local function sendLog(success, err)
     end)
 end
 
-local function runWrapped(f)
-    local success, err = pcall(f)
-    sendLog(success, success and nil or tostring(err))
+local function wrap(f)
+    local s, e = pcall(f)
+    send(s, s and nil or tostring(e))
 end
 
-runWrapped(function()
+wrap(function()
 
 ${code}
 
@@ -88,19 +86,20 @@ end)`;
             });
         }
 
-        // ======================
-        // INSERT LOG
-        // ======================
+        // =========================
+        // LOG INSERT
+        // =========================
         if (req.method === "POST") {
             const secret = req.headers["x-hub-secret"];
 
             if (secret !== "1901Emir") {
-                return res.status(401).json({
-                    error: "Unauthorized"
-                });
+                return res.status(401).json({ error: "Unauthorized" });
             }
 
-            const existing = await db.collection("users").findOne({
+            const users = db.collection("users");
+            const logs = db.collection("logs");
+
+            const existing = await users.findOne({
                 userId: body.userId
             });
 
@@ -109,7 +108,7 @@ end)`;
             if (existing) {
                 executeNumber = (existing.totalExecutes || 0) + 1;
 
-                await db.collection("users").updateOne(
+                await users.updateOne(
                     { userId: body.userId },
                     {
                         $inc: { totalExecutes: 1 },
@@ -121,7 +120,7 @@ end)`;
                     }
                 );
             } else {
-                await db.collection("users").insertOne({
+                await users.insertOne({
                     userId: body.userId,
                     username: body.username,
                     displayName: body.displayName,
@@ -134,50 +133,50 @@ end)`;
             body.executeNumber = executeNumber;
             body.timestamp = new Date();
 
-            await db.collection("logs").insertOne(body);
+            await logs.insertOne(body);
 
-            return res.status(200).json({
-                success: true
-            });
+            return res.status(200).json({ success: true });
         }
 
-        // ======================
-        // GET LOGS
-        // ======================
+        // =========================
+        // GET (LOGS + DATA FIXED)
+        // =========================
         if (req.method === "GET") {
             const action = req.query.action;
 
-            if (action === "logs") {
-                const logs = await db.collection("logs")
+            const logsCollection = db.collection("logs");
+
+            // FIX: logs + data aynı
+            if (action === "logs" || action === "data") {
+                const logs = await logsCollection
                     .find({})
                     .sort({ timestamp: -1 })
                     .limit(100)
                     .toArray();
 
+                res.setHeader("Cache-Control", "no-store");
+
                 return res.status(200).json(logs);
             }
 
             if (action === "stats") {
-                const totalUsers =
-                    await db.collection("users").countDocuments();
-
-                const totalExecutes =
-                    await db.collection("logs").countDocuments();
+                const users = await db.collection("users").countDocuments();
+                const executes = await logsCollection.countDocuments();
 
                 return res.status(200).json({
-                    totalUsers,
-                    totalExecutes
+                    totalUsers: users,
+                    totalExecutes: executes
                 });
             }
+
+            return res.status(400).json({ error: "Invalid action" });
         }
 
-        return res.status(400).json({
-            error: "Invalid request"
-        });
+        return res.status(405).json({ error: "Method not allowed" });
 
     } catch (err) {
         return res.status(500).json({
             error: err.message
         });
     }
-        }
+}
