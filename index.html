@@ -1,98 +1,73 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HubTrack</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<style>
-body{
-background:#0f172a;
-color:white;
-}
-.card{
-background:#1e293b;
-border-radius:16px;
-padding:20px;
-}
-</style>
 </head>
-<body class="p-4">
+<body class="bg-[#0b1120] text-white">
 
-<div class="max-w-5xl mx-auto space-y-6">
+<div class="flex h-screen">
 
-<h1 class="text-3xl font-bold">HubTrack Dashboard</h1>
+<aside class="w-72 bg-[#111827] p-5">
+    <h1 class="text-3xl font-bold">HubTrack</h1>
 
-<div class="card space-y-4">
-<input id="scriptName" class="w-full p-3 rounded bg-slate-900" placeholder="Script Name">
+    <div class="mt-8 space-y-3">
+        <button class="w-full text-left p-3 rounded bg-slate-800">Dashboard</button>
+        <button class="w-full text-left p-3 rounded bg-slate-800">Logs</button>
+        <button class="w-full text-left p-3 rounded bg-slate-800">Search</button>
+    </div>
+</aside>
 
-<textarea id="rawCode" rows="10" class="w-full p-3 rounded bg-slate-900 font-mono" placeholder="Lua code"></textarea>
+<main class="flex-1 p-8">
 
-<button onclick="generateScript()" class="w-full bg-blue-600 p-3 rounded">
-Generate Script
-</button>
+<div class="grid grid-cols-4 gap-4">
+    <div class="bg-slate-900 rounded-xl p-5">
+        <p>Total Executes</p>
+        <h2 id="executes" class="text-3xl font-bold">0</h2>
+    </div>
+
+    <div class="bg-slate-900 rounded-xl p-5">
+        <p>Unique Users</p>
+        <h2 id="users" class="text-3xl font-bold">0</h2>
+    </div>
 </div>
 
-<div class="card">
-<textarea id="outputCode" rows="16" readonly class="w-full p-3 rounded bg-black text-cyan-400 font-mono"></textarea>
+<div class="mt-8">
+<input id="search" placeholder="Search username..."
+class="w-full bg-slate-900 p-4 rounded-xl">
 </div>
 
-<div class="card">
-<div class="flex justify-between mb-4">
-<h2>Logs</h2>
-<button onclick="loadLogs()" class="bg-green-600 px-4 py-2 rounded">Refresh</button>
-</div>
+<div id="logs" class="mt-8 space-y-3"></div>
 
-<div id="logsContainer" class="space-y-3"></div>
-</div>
-
+</main>
 </div>
 
 <script>
-async function generateScript(){
-    const name=document.getElementById("scriptName").value;
-    const code=document.getElementById("rawCode").value;
-
-    const res=await fetch("/api/track",{
-        method:"POST",
-        headers:{
-            "Content-Type":"application/json"
-        },
-        body:JSON.stringify({
-            action:"create",
-            name,
-            code
-        })
-    });
-
-    const data=await res.json();
-
-    if(data.modifiedLua){
-        document.getElementById("outputCode").value=data.modifiedLua;
-    } else {
-        alert(JSON.stringify(data));
-    }
+async function loadStats(){
+    const res=await fetch('/api/track?action=stats')
+    const data=await res.json()
+    document.getElementById('executes').innerText=data.totalExecutes
+    document.getElementById('users').innerText=data.totalUsers
 }
 
 async function loadLogs(){
-    const res=await fetch("/api/track?action=data");
-    const logs=await res.json();
-
-    const c=document.getElementById("logsContainer");
-    c.innerHTML="";
+    const res=await fetch('/api/track?action=logs')
+    const logs=await res.json()
+    const c=document.getElementById('logs')
+    c.innerHTML=''
 
     logs.forEach(log=>{
         c.innerHTML += `
-        <div class="bg-slate-900 rounded p-3">
-            <div>User: ${log.username}</div>
-            <div>ID: ${log.userId}</div>
-            <div>Executor: ${log.executor}</div>
-            <div>Place: ${log.placeId}</div>
-            <div>Status: ${log.success ? "SUCCESS" : log.error}</div>
+        <div class="bg-slate-900 rounded-xl p-4">
+            <div>${log.username}</div>
+            <div>${log.executor}</div>
+            <div>Execute #${log.executeNumber}</div>
         </div>
-        `;
-    });
+        `
+    })
 }
+
+loadStats()
+loadLogs()
 </script>
 
 </body>
