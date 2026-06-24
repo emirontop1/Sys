@@ -1,138 +1,74 @@
-import { MongoClient } from "mongodb";
+<!DOCTYPE html>
+<html>
+<head>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#0b1120] text-white">
 
-let cachedClient = null;
+<div class="flex h-screen">
 
-async function connectToDatabase() {
-    if (cachedClient) return cachedClient;
+<aside class="w-72 bg-[#111827] p-5">
+    <h1 class="text-3xl font-bold">HubTrack</h1>
 
-    const client = await MongoClient.connect(process.env.MONGODB_URI, {
-        maxPoolSize: 10
-    });
+    <div class="mt-8 space-y-3">
+        <button class="w-full text-left p-3 rounded bg-slate-800">Dashboard</button>
+        <button class="w-full text-left p-3 rounded bg-slate-800">Logs</button>
+        <button class="w-full text-left p-3 rounded bg-slate-800">Search</button>
+    </div>
+</aside>
 
-    cachedClient = client;
-    return client;
+<main class="flex-1 p-8">
+
+<div class="grid grid-cols-4 gap-4">
+    <div class="bg-slate-900 rounded-xl p-5">
+        <p>Total Executes</p>
+        <h2 id="executes" class="text-3xl font-bold">0</h2>
+    </div>
+
+    <div class="bg-slate-900 rounded-xl p-5">
+        <p>Unique Users</p>
+        <h2 id="users" class="text-3xl font-bold">0</h2>
+    </div>
+</div>
+
+<div class="mt-8">
+<input id="search" placeholder="Search username..."
+class="w-full bg-slate-900 p-4 rounded-xl">
+</div>
+
+<div id="logs" class="mt-8 space-y-3"></div>
+
+</main>
+</div>
+
+<script>
+async function loadStats(){
+    const res=await fetch('/api/track?action=stats')
+    const data=await res.json()
+    document.getElementById('executes').innerText=data.totalExecutes
+    document.getElementById('users').innerText=data.totalUsers
 }
 
-export default async function handler(req, res) {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Hub-Secret");
+async function loadLogs(){
+    const res=await fetch('/api/track?action=logs')
+    const logs=await res.json()
+    const c=document.getElementById('logs')
+    c.innerHTML=''
 
-    if (req.method === "OPTIONS") return res.status(200).end();
-
-    try {
-        const client = await connectToDatabase();
-        const db = client.db("hubtrack");
-        const secret = process.env.MY_HUB_SECRET_KEY;
-
-        // Roblox log POST
-        if (req.method === "POST" && !req.body.action) {
-            console.log("POST RECEIVED");
-
-            const headerSecret = req.headers["x-hub-secret"];
-            console.log("HEADER:", headerSecret);
-
-            if (headerSecret !== secret) {
-                return res.status(401).json({ error: "Unauthorized" });
-            }
-
-            const data =
-                typeof req.body === "string"
-                    ? JSON.parse(req.body)
-                    : req.body;
-
-            data.createdAt = new Date();
-
-            await db.collection("analytics").insertOne(data);
-
-            return res.status(200).json({ success: true });
-        }
-
-        // Script generate
-        if (req.method === "POST" && req.body.action === "create") {
-            const { name, code } = req.body;
-
-            const trackingKey =
-                "hub_" + Math.random().toString(36).substring(2, 11);
-
-            await db.collection("scripts").insertOne({
-                name,
-                trackingKey,
-                originalCode: code,
-                createdAt: new Date()
-            });
-
-            const appUrl = `https://${req.headers.host}`;
-            const secretKey = process.env.MY_HUB_SECRET_KEY;
-
-            const wrappedLua = `
-local HttpService = game:GetService("HttpService")
-
-local req = request or http_request or syn.request
-
-local function sendLog(success, err)
-    if not req then
-        warn("No request function")
-        return
-    end
-
-    local payload = HttpService:JSONEncode({
-        trackingKey="${trackingKey}",
-        executor=identifyexecutor and identifyexecutor() or "Unknown",
-        userId=game.Players.LocalPlayer.UserId,
-        username=game.Players.LocalPlayer.Name,
-        placeId=game.PlaceId,
-        success=success,
-        error=err
+    logs.forEach(log=>{
+        c.innerHTML += `
+        <div class="bg-slate-900 rounded-xl p-4">
+            <div>${log.username}</div>
+            <div>${log.executor}</div>
+            <div>Execute #${log.executeNumber}</div>
+        </div>
+        `
     })
-
-    local response = req({
-        Url="${appUrl}/api/track",
-        Method="POST",
-        Headers={
-            ["Content-Type"]="application/json",
-            ["X-Hub-Secret"]="${secretKey}"
-        },
-        Body=payload
-    })
-
-    print(response.StatusCode)
-end
-
-local function runWrapped(f)
-    local s,e = pcall(f)
-    sendLog(s, e)
-end
-
-runWrapped(function()
-${code}
-end)
-`;
-
-            return res.status(200).json({
-                modifiedLua: wrappedLua,
-                trackingKey
-            });
-        }
-
-        if (req.method === "GET") {
-            if (req.query.action === "data") {
-                const logs = await db
-                    .collection("analytics")
-                    .find({})
-                    .sort({ createdAt: -1 })
-                    .limit(50)
-                    .toArray();
-
-                return res.status(200).json(logs);
-            }
-        }
-
-        return res.status(400).json({ error: "Invalid request" });
-    } catch (err) {
-        console.error(err);
-        return res.status(500).json({
-            error: err.message
-        });
-    }
 }
+
+loadStats()
+loadLogs()
+</script>
+
+</body>
+</html>
