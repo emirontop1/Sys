@@ -27,9 +27,12 @@ textarea{resize:none;}
             <h1 class="text-4xl font-bold">HubTrack Pro</h1>
             <p class="text-gray-400">Advanced Roblox Analytics</p>
         </div>
-        <button onclick="loadLogs()" class="bg-green-600 px-4 py-3 rounded-xl">
-            Refresh
-        </button>
+        <div class="flex gap-3 items-center">
+            <span id="statusText" class="text-sm text-gray-400"></span>
+            <button onclick="loadLogs()" class="bg-green-600 px-4 py-3 rounded-xl">
+                Refresh
+            </button>
+        </div>
     </div>
 
     <!-- Stats -->
@@ -124,58 +127,131 @@ function randomColor(seed){
     return `hsl(${Math.abs(hash)%360},70%,60%)`;
 }
 
-async function generateUsage(){
-    const name=document.getElementById("scriptName").value;
-    const code=document.getElementById("rawCode").value;
+function setStatus(message, isError=false){
+    const status=document.getElementById("statusText");
+    status.textContent=message || "";
+    status.className=`text-sm ${isError ? "text-red-400" : "text-gray-400"}`;
+}
 
-    const res=await fetch("/api/track",{
-        method:"POST",
-        headers:{
-            "Content-Type":"application/json"
-        },
-        body:JSON.stringify({
-            action:"create",
-            name,
-            code
-        })
-    });
+function escapeHtml(value){
+    return String(value ?? "").replace(/[&<>"']/g, char=>({
+        "&":"&amp;",
+        "<":"&lt;",
+        ">":"&gt;",
+        "\"":"&quot;",
+        "'":"&#39;"
+    }[char]));
+}
 
-    const data=await res.json();
-
-    if(data.modifiedLua){
-        document.getElementById("usageCode").value=data.modifiedLua;
-    }else{
-        alert(JSON.stringify(data));
+async function parseJsonResponse(res){
+    const text=await res.text();
+    try{
+        const data=text ? JSON.parse(text) : {};
+        if(!res.ok){
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        return data;
+    }catch(err){
+        if(!res.ok){
+            throw err;
+        }
+        throw new Error("Server returned invalid JSON");
     }
 }
 
-function copyCode(){
-    navigator.clipboard.writeText(
-        document.getElementById("usageCode").value
-    );
+async function generateUsage(){
+    const name=document.getElementById("scriptName").value.trim();
+    const code=document.getElementById("rawCode").value;
+
+    if(!code.trim()){
+        alert("Önce Lua kodu gir.");
+        return;
+    }
+
+    try{
+        setStatus("Generating usage code...");
+        const res=await fetch("/api/track",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({action:"create", name, code})
+        });
+
+        const data=await parseJsonResponse(res);
+        document.getElementById("usageCode").value=data.modifiedLua || "";
+        setStatus("Usage code generated.");
+    }catch(err){
+        setStatus(err.message, true);
+        alert(err.message);
+    }
 }
 
+async function copyCode(){
+    const value=document.getElementById("usageCode").value;
+    if(!value){
+        alert("Kopyalanacak kod yok.");
+        return;
+    }
+    await navigator.clipboard.writeText(value);
+    setStatus("Copied usage code.");
+}
+
+let allLogs=[];
+
 async function loadLogs(){
-    const res=await fetch("/api/track?action=logs");
-    const logs=await res.json();
+    try{
+        setStatus("Loading logs...");
+        const [logsRes, statsRes]=await Promise.all([
+            fetch("/api/track?action=logs", {cache:"no-store"}),
+            fetch("/api/track?action=stats", {cache:"no-store"})
+        ]);
 
+        allLogs=await parseJsonResponse(logsRes);
+        const stats=await parseJsonResponse(statsRes);
+
+        document.getElementById("statExecutes").textContent=stats.totalExecutes ?? allLogs.length;
+        document.getElementById("statUsers").textContent=stats.totalUsers ?? new Set(allLogs.map(x=>x.userId)).size;
+        document.getElementById("statExecutors").textContent=stats.totalExecutors ?? new Set(allLogs.map(x=>x.executor)).size;
+        document.getElementById("statErrors").textContent=`${stats.errorRate ?? 0}%`;
+
+        renderLogs();
+        setStatus(`Loaded ${allLogs.length} logs.`);
+    }catch(err){
+        setStatus(err.message, true);
+        document.getElementById("logsContainer").innerHTML=`<div class="bg-red-950/60 rounded-xl p-4 text-red-200">${escapeHtml(err.message)}</div>`;
+    }
+}
+
+function renderLogs(){
+    const query=document.getElementById("searchBox").value.toLowerCase().trim();
     const container=document.getElementById("logsContainer");
-    container.innerHTML="";
-
     const executors={};
     const countries={};
 
-    logs.forEach(log=>{
-        executors[log.executor]=(executors[log.executor]||0)+1;
-        countries[log.country]=(countries[log.country]||0)+1;
+    const filtered=allLogs.filter(log=>{
+        const haystack=[log.username, log.userId, log.executor, log.country, log.scriptName].join(" ").toLowerCase();
+        return !query || haystack.includes(query);
+    });
+
+    container.innerHTML=filtered.length ? "" : `<div class="text-gray-400">No logs found.</div>`;
+
+    filtered.forEach(log=>{
+        const executor=log.executor || "Unknown";
+        const country=log.country || "Unknown";
+        executors[executor]=(executors[executor]||0)+1;
+        countries[country]=(countries[country]||0)+1;
 
         container.innerHTML += `
             <div class="bg-slate-900 rounded-xl p-4">
-                <div class="font-bold">${log.username}</div>
-                <div>User ID: ${log.userId}</div>
-                <div>Executor: ${log.executor}</div>
-                <div>Country: ${log.country || "Unknown"}</div>
-                <div>Execute #: ${log.executeNumber || "?"}</div>
+                <div class="font-bold">${escapeHtml(log.username || "Unknown")}</div>
+                <div>User ID: ${escapeHtml(log.userId || "Unknown")}</div>
+                <div>Script: ${escapeHtml(log.scriptName || "Untitled")}</div>
+                <div>Executor: ${escapeHtml(executor)}</div>
+                <div>Country: ${escapeHtml(country)}</div>
+                <div>Device: ${escapeHtml(log.device || "Unknown")}</div>
+                <div>Event: ${escapeHtml(log.event || "finish")}</div>
+                <div>Status: ${log.success === false ? "Error" : "Success"}</div>
+                <div>Execute #: ${escapeHtml(log.executeNumber || "?")}</div>
+                ${log.error ? `<pre class="mt-2 whitespace-pre-wrap text-red-300">${escapeHtml(log.error)}</pre>` : ""}
             </div>
         `;
     });
@@ -221,6 +297,7 @@ function drawCharts(executors,countries){
     );
 }
 
+document.getElementById("searchBox").addEventListener("input", renderLogs);
 loadLogs();
 </script>
 </body>
